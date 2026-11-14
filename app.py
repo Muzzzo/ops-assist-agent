@@ -20,8 +20,19 @@ st.set_page_config(page_title="OpsAssist AI Agent", page_icon="🛠️", layout=
 st.title("🛠️ OpsAssist: Field & IT Support Agent")
 st.caption("AI-powered troubleshooting grounded in company SOPs with automated SQL ticket escalation.")
 
-# API Key setup (reads from Streamlit Secrets in production, or sidebar input locally)
-api_key = os.getenv("GEMINI_API_KEY") or st.sidebar.text_input("Enter Gemini API Key", type="password")
+# Read API key from Streamlit Cloud Secrets, environment variables, or sidebar
+api_key = ""
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"].strip()
+except Exception:
+    pass
+
+if not api_key:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+if not api_key:
+    api_key = st.sidebar.text_input("Enter Gemini API Key", type="password").strip()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -36,46 +47,49 @@ if prompt := st.chat_input("Describe the hardware, power, or network issue..."):
         st.markdown(prompt)
 
     if not api_key:
-        st.warning("Please enter your Gemini API key in the sidebar to run the agent.")
+        st.warning("Please enter your Gemini API key in the sidebar or Streamlit Secrets.")
     else:
-        client = genai.Client(api_key=api_key)
-        
-        system_instruction = f"""
-        You are an enterprise IT & Field Operations AI Agent. 
-        Answer the user's issue strictly using the Standard Operating Procedures (SOPs) provided below.
-        Keep your steps clear, concise, and actionable for field technicians.
-        If the issue is NOT covered in the SOPs, tell the user you are escalating it to Tier-2 Engineering and add the exact tag [ESCALATE] at the end of your reply.
-        
-        SOPs:
-        {sop_context}
-        """
+        try:
+            client = genai.Client(api_key=api_key)
+            
+            system_instruction = f"""
+            You are an enterprise IT & Field Operations AI Agent. 
+            Answer the user's issue strictly using the Standard Operating Procedures (SOPs) provided below.
+            Keep your steps clear, concise, and actionable for field technicians.
+            If the issue is NOT covered in the SOPs, tell the user you are escalating it to Tier-2 Engineering and add the exact tag [ESCALATE] at the end of your reply.
+            
+            SOPs:
+            {sop_context}
+            """
 
-        # Format conversation history for Gemini
-        conversation = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
-        
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=conversation,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.2,
+            conversation = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
+            
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=conversation,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.2,
+                )
             )
-        )
-        reply = response.text
+            reply = response.text
 
-        # Agentic Action: Automatically log escalated issues to SQL database
-        if "[ESCALATE]" in reply:
-            clean_reply = reply.replace("[ESCALATE]", "").strip()
-            c.execute("INSERT INTO tickets (issue, status, created_at) VALUES (?, ?, ?)",
-                      (prompt, "Escalated to Tier-2", datetime.now().strftime("%Y-%m-%d %H:%M")))
-            conn.commit()
-            clean_reply += "\n\n✅ **Automated Action:** Ticket logged to SQL database for Tier-2 review."
-        else:
-            clean_reply = reply
+            # Agentic Action: Automatically log escalated issues to SQL database
+            if "[ESCALATE]" in reply:
+                clean_reply = reply.replace("[ESCALATE]", "").strip()
+                c.execute("INSERT INTO tickets (issue, status, created_at) VALUES (?, ?, ?)",
+                          (prompt, "Escalated to Tier-2", datetime.now().strftime("%Y-%m-%d %H:%M")))
+                conn.commit()
+                clean_reply += "\n\n✅ **Automated Action:** Ticket logged to SQL database for Tier-2 review."
+            else:
+                clean_reply = reply
 
-        st.session_state.messages.append({"role": "assistant", "content": clean_reply})
-        with st.chat_message("assistant"):
-            st.markdown(clean_reply)
+            st.session_state.messages.append({"role": "assistant", "content": clean_reply})
+            with st.chat_message("assistant"):
+                st.markdown(clean_reply)
+
+        except Exception as e:
+            st.error(f"Gemini API Error: {e}")
 
 # Sidebar view of live SQL database
 with st.sidebar:
