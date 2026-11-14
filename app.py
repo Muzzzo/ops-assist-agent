@@ -65,7 +65,7 @@ if prompt := st.chat_input("Describe the hardware, power, or network issue..."):
             conversation = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
             
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=conversation,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
