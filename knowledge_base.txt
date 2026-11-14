@@ -1,0 +1,4 @@
+SOP-01 Starlink Offline: Check power supply and PoE injector LED. Verify cable seating. Reboot router for 60 seconds. If obstructed, check app visibility map.
+SOP-02 Thermal Printer Jam: Power off unit. Open top latch, remove jammed roll, clean sensor with isopropyl alcohol, reload paper shiny-side up.
+SOP-03 Battery Overheating: Immediately disconnect load. Move battery to ventilated shade. Do not charge until core temp drops below 35C.
+SOP-04 Generator Failure to Start: Check fuel level and oil sensor. Inspect spark plug for carbon buildup. Verify choke position is closed for cold start.
