@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import os
+import time
 from datetime import datetime
 from google import genai
 from google.genai import types
@@ -41,6 +42,31 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
+def generate_with_fallback(client, conversation, system_instruction):
+    """Attempts primary model with retry, falling back to secondary model on 503 spikes."""
+    models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite"]
+    last_error = None
+
+    for model_name in models_to_try:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=conversation,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.2,
+                    )
+                )
+                return response.text
+            except Exception as e:
+                last_error = e
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(2)
+                    continue
+                raise e
+    raise last_error
+
 if prompt := st.chat_input("Describe the hardware, power, or network issue..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -64,15 +90,8 @@ if prompt := st.chat_input("Describe the hardware, power, or network issue..."):
 
             conversation = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
             
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=conversation,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.2,
-                )
-            )
-            reply = response.text
+            with st.spinner("Analyzing SOPs & diagnosing..."):
+                reply = generate_with_fallback(client, conversation, system_instruction)
 
             # Agentic Action: Automatically log escalated issues to SQL database
             if "[ESCALATE]" in reply:
@@ -89,7 +108,7 @@ if prompt := st.chat_input("Describe the hardware, power, or network issue..."):
                 st.markdown(clean_reply)
 
         except Exception as e:
-            st.error(f"Gemini API Error: {e}")
+            st.error(f"Service temporarily busy ({e}). Please try sending your message again in a few seconds.")
 
 # Sidebar view of live SQL database
 with st.sidebar:
